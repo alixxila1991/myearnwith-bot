@@ -2,8 +2,11 @@ from aiogram import Bot, Dispatcher, executor, types
 import json
 import os
 from threading import Timer
+from dotenv import load_dotenv  # ✅ Load .env file
 
-API_TOKEN = os.getenv("API_TOKEN")
+load_dotenv()  # ✅ Activate .env reading
+
+API_TOKEN = os.getenv("BOT_TOKEN")  # ✅ Securely get token
 GROUP_ID = -1002730916091  # Replace with your actual group ID
 
 bot = Bot(token=API_TOKEN)
