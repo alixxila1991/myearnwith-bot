@@ -3,7 +3,7 @@ import json
 import os
 from threading import Timer
 
-API_TOKEN = os.getenv("BOT_TOKEN")
+API_TOKEN = os.getenv("API_TOKEN")
 GROUP_ID = -1002730916091  # Replace with your actual group ID
 
 bot = Bot(token=API_TOKEN)
