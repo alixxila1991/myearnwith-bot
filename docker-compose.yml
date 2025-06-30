@@ -1,0 +1,8 @@
+version: '3'
+services:
+  bot:
+    build: .
+    container_name: myearn_bot
+    environment:
+      - BOT_TOKEN=YOUR_BOT_TOKEN_HERE
+    restart: always
