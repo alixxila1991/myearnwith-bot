@@ -28,7 +28,7 @@ async def send_welcome(message: types.Message):
         user_wallet[uid] = {"wallet": 0}
     keyboard = InlineKeyboardMarkup()
     keyboard.add(
-        InlineKeyboardButton("Join Group", url="https://t.me/yourgroupname", callback_data="joined")
+        InlineKeyboardButton("Join Group", url="https://t.me/Amazon_Flipkart_Loot_Alerts", callback_data="joined")
     )
     await message.answer(
         "💸 Earn ₹50 in just a few simple steps!\nClick below to join our group and get rewarded!",
