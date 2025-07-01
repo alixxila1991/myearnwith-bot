@@ -11,6 +11,7 @@ API_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 bot = Bot(token=API_TOKEN)
+Bot.set_current(bot) 
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
