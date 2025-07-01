@@ -1,125 +1,141 @@
 import os
+import asyncio
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiohttp import web
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
-API_TOKEN = os.getenv("BOT_TOKEN") or "PUT_YOUR_FALLBACK_BOT_TOKEN_HERE"
-WEBHOOK_URL = os.getenv("WEBHOOK_URL") or "https://your-render-url.onrender.com/webhook"
-GROUP_ID = -1002730916091  # Your Telegram Group ID
+API_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+GROUP_ID = -1002730916091
 
-# Initialize bot and dispatcher
 bot = Bot(token=API_TOKEN)
-Bot.set_current(bot)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
-# User wallet memory
-user_wallet = {}
+user_data = {}
 
-# --- /start ---
+class Form(StatesGroup):
+    awaiting_screenshot = State()
+    awaiting_upi = State()
+
+# --- /start Command ---
 @dp.message_handler(commands=['start'])
-async def start_handler(message: types.Message):
+async def send_welcome(message: types.Message):
     uid = str(message.from_user.id)
-    if uid not in user_wallet:
-        user_wallet[uid] = {"wallet": 0, "step": "group_join"}
-    join_btn = InlineKeyboardMarkup().add(
-        InlineKeyboardButton("Join Telegram Group", url="https://t.me/Amazon_Flipkart_Loot_Alerts"),
-        InlineKeyboardButton("✅ I Have Joined", callback_data="verify_join")
-    )
-    await message.answer(
-        "👋 Welcome to the ₹50 Giveaway Bot!\n\n💸 Earn ₹50 directly to your UPI — just follow a few simple steps.\n\n🎯 Step 1: Join our group below.",
-        reply_markup=join_btn
-    )
+    user_data[uid] = {'wallet': 0, 'shared_groups': 0, 'referred': False, 'whatsapp_done': False}
 
-# --- Group join verification ---
-@dp.callback_query_handler(lambda c: c.data == "verify_join")
-async def verify_group_join(callback_query: CallbackQuery):
-    user_id = callback_query.from_user.id
-    uid = str(user_id)
-    member = await bot.get_chat_member(chat_id=GROUP_ID, user_id=user_id)
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(
+        InlineKeyboardButton("✅ Join Telegram Group", url="https://t.me/Amazon_Flipkart_Loot_Alerts"),
+        InlineKeyboardButton("➡️ I Have Joined", callback_data="verify_join")
+    )
+    await message.answer("👋 Welcome!\n\n💸 Earn ₹50 by completing simple steps!\n\n👇 Step 1: Join the Telegram group below:", reply_markup=keyboard)
 
-    if member.status in ["member", "administrator", "creator"]:
-        user_wallet[uid]["wallet"] += 20
-        user_wallet[uid]["step"] = "referral"
-        btn = InlineKeyboardMarkup().add(
-            InlineKeyboardButton("💼 Check Balance", callback_data="check_balance")
-        )
-        await bot.answer_callback_query(callback_query.id)
-        await bot.send_message(user_id, "🎉 Joined verified!\n₹20 added to your wallet.", reply_markup=btn)
+# --- Verify Group Join ---
+@dp.callback_query_handler(lambda c: c.data == 'verify_join')
+async def verify_join(callback_query: types.CallbackQuery):
+    uid = str(callback_query.from_user.id)
+    member = await bot.get_chat_member(GROUP_ID, callback_query.from_user.id)
+    if member.status in ['member', 'creator', 'administrator']:
+        user_data[uid]['wallet'] = 20
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("💼 Check Balance", callback_data="check_balance"))
+        await callback_query.message.edit_text("🎉 Congratulations! You have successfully joined the group.\n\n₹20 added to your wallet.", reply_markup=kb)
     else:
-        await bot.answer_callback_query(callback_query.id, text="❌ You have not joined the group.", show_alert=True)
+        await callback_query.message.edit_text("❌ You haven't joined the group yet. Please join and try again.")
 
-# --- Balance check ---
-@dp.callback_query_handler(lambda c: c.data == "check_balance")
-async def show_wallet(callback_query: CallbackQuery):
+# --- Check Balance & Share Link ---
+@dp.callback_query_handler(lambda c: c.data == 'check_balance')
+async def check_balance(callback_query: types.CallbackQuery):
     uid = str(callback_query.from_user.id)
-    balance = user_wallet[uid]["wallet"]
-    referral_btn = InlineKeyboardMarkup().add(
-        InlineKeyboardButton("✅ I’ve Shared in 5 Groups", callback_data="verify_referral")
-    )
-    await bot.answer_callback_query(callback_query.id)
-    await bot.send_message(callback_query.from_user.id,
-        f"💼 Wallet Balance: ₹{balance}\n\n🔓 To unlock ₹30 more:\nShare your link in 5 active groups:\n\n📎 Your Link:\nhttps://t.me/YourBot?start={uid}",
-        reply_markup=referral_btn
-    )
+    balance = user_data[uid]['wallet']
+    keyboard = InlineKeyboardMarkup()
+    if balance == 20:
+        keyboard.add(InlineKeyboardButton("📤 Share Referral Link in 5 Groups", callback_data="share_link"))
+    elif balance >= 50 and not user_data[uid]['whatsapp_done']:
+        keyboard.add(InlineKeyboardButton("💬 Join WhatsApp Channel", url="https://wa.me/yourwhatsapplink"))
+        keyboard.add(InlineKeyboardButton("📸 I Joined WhatsApp & Have Screenshot", callback_data="upload_ss"))
+    elif balance == 70:
+        keyboard.add(InlineKeyboardButton("💳 Withdraw ₹70", callback_data="withdraw"))
 
-# --- Fake referral verification ---
-@dp.callback_query_handler(lambda c: c.data == "verify_referral")
-async def fake_verification(callback_query: CallbackQuery):
+    await callback_query.message.answer(f"💼 Wallet Balance: ₹{balance}", reply_markup=keyboard)
+
+# --- Share Link Step ---
+@dp.callback_query_handler(lambda c: c.data == 'share_link')
+async def share_link_step(callback_query: types.CallbackQuery):
     uid = str(callback_query.from_user.id)
-    user_wallet[uid]["wallet"] += 30
-    user_wallet[uid]["step"] = "withdraw"
-    withdraw_btn = InlineKeyboardMarkup().add(
-        InlineKeyboardButton("💸 Withdraw ₹50", callback_data="withdraw")
-    )
-    await bot.answer_callback_query(callback_query.id)
-    await bot.send_message(callback_query.from_user.id,
-        f"✅ Verified!\n₹30 added.\n\n💼 Total: ₹50\n\n🔓 Withdrawal unlocked!",
-        reply_markup=withdraw_btn
-    )
+    link = f"https://t.me/YourBotUsername?start={uid}"
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("✅ I've Shared in 5 Groups", callback_data="verify_share"))
+    await callback_query.message.answer(f"📎 Your Referral Link:\n{link}\n\n📢 Share this in 5 active Telegram groups.\nThen click the button below.", reply_markup=kb)
 
-# --- Fake withdraw ---
-@dp.callback_query_handler(lambda c: c.data == "withdraw")
-async def withdraw_handler(callback_query: CallbackQuery):
-    await bot.answer_callback_query(callback_query.id)
-    await bot.send_message(callback_query.from_user.id,
-        "✍️ Enter your UPI ID to receive ₹50 (e.g. 9876543210@okaxis):")
+# --- Verify Shared Link ---
+@dp.callback_query_handler(lambda c: c.data == 'verify_share')
+async def verify_share(callback_query: types.CallbackQuery):
+    uid = str(callback_query.from_user.id)
+    if user_data[uid]['shared_groups'] >= 5:
+        await callback_query.message.answer("✅ Already verified. You earned ₹30.")
+        return
 
-@dp.message_handler(lambda message: "@" in message.text and len(message.text) < 50)
-async def handle_upi(message: types.Message):
-    await message.answer("✅ UPI ID received.\n\n💸 ₹50 will be credited in 2 hours.\n🧾 TXN: TXN12345UPAY")
+    # Simulate verifying shared groups (you can add actual logic)
+    user_data[uid]['shared_groups'] = 5
+    user_data[uid]['wallet'] += 30
+    await callback_query.message.answer("🎉 Verified! You earned ₹30 more.")
+    await check_balance(callback_query)
 
-# --- Webhook handler ---
+# --- Screenshot Upload Prompt ---
+@dp.callback_query_handler(lambda c: c.data == 'upload_ss')
+async def ask_screenshot(callback_query: types.CallbackQuery, state: FSMContext):
+    await Form.awaiting_screenshot.set()
+    await callback_query.message.answer("📸 Please send a screenshot showing you joined the WhatsApp group.")
+
+@dp.message_handler(content_types=['photo'], state=Form.awaiting_screenshot)
+async def handle_screenshot(message: types.Message, state: FSMContext):
+    await state.finish()
+    await Form.awaiting_upi.set()
+    await message.answer("✅ Screenshot verified. Now send your UPI ID (e.g., 98765@upi)")
+
+@dp.message_handler(state=Form.awaiting_upi)
+async def get_upi_id(message: types.Message, state: FSMContext):
+    uid = str(message.from_user.id)
+    user_data[uid]['wallet'] = 70
+    user_data[uid]['whatsapp_done'] = True
+    await state.finish()
+    await message.answer("✅ UPI ID received.\n\n💸 Your ₹70 will be credited within 1 hour.\n🧾 Transaction ID: TXN{}UPAY".format(uid[-4:]))
+    # Send fake confirmation after delay
+    await asyncio.sleep(3600)
+    await message.answer(f"🎉 ₹70 successfully credited to your UPI!\nThanks for participating.")
+
+# --- Withdraw Handler ---
+@dp.callback_query_handler(lambda c: c.data == 'withdraw')
+async def withdraw_handler(callback_query: types.CallbackQuery):
+    uid = str(callback_query.from_user.id)
+    if user_data[uid]['wallet'] == 70:
+        await callback_query.message.answer("💰 You've earned ₹70. Please wait while we process your withdrawal.")
+    else:
+        await callback_query.message.answer("⚠️ You have not yet completed all steps.")
+
+# --- Webhook Setup ---
 async def handle_webhook(request):
-    Bot.set_current(bot)
     data = await request.json()
     update = types.Update.to_object(data)
     await dp.process_update(update)
     return web.Response(text="OK")
 
-# --- Health check ---
-async def handle_health(request):
-    return web.Response(text="OK")
-
-# --- Startup & Shutdown ---
 async def on_startup(app):
     await bot.set_webhook(WEBHOOK_URL)
-    print("🚀 Webhook set to:", WEBHOOK_URL)
 
 async def on_shutdown(app):
     await bot.delete_webhook()
     await storage.close()
     await storage.wait_closed()
 
-# --- App ---
 app = web.Application()
 app.router.add_post('/webhook', handle_webhook)
-app.router.add_get('/', handle_health)
 app.on_startup.append(on_startup)
 app.on_shutdown.append(on_shutdown)
 
