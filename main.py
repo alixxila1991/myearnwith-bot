@@ -7,8 +7,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-API_TOKEN = os.getenv("7642038281:AAGb-OulljQVEGWFgPA1tPYUocnCQ_20s4o") or "PUT_YOUR_TOKEN_HERE_AS_FALLBACK"
-WEBHOOK_URL = os.getenv("https://myearnwith-bot-bxmz.onrender.com") or "https://myearnwith-bot-bxmz.onrender.com/webhook"  # IMPORTANT FIX ✅
+API_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 bot = Bot(token=API_TOKEN)
 storage = MemoryStorage()
